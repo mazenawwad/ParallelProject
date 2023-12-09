@@ -1,0 +1,93 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <cuda_runtime.h>
+
+#define NUM_BITS 4
+#define NUM_BUCKETS (1 << NUM_BITS)
+#define NUM_ELEMENTS 1000000
+#define THREADS_PER_BLOCK 512
+
+// Calculate the number of blocks based on the number of elements and threads per block
+#define NUM_BLOCKS ((NUM_ELEMENTS + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK)
+
+_global_ void radixSort(int *data, int *tempData, int bit, int numElements) {
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    int bucket, bucketCount[NUM_BUCKETS] = {0};
+    
+    // Count the number of elements in each bucket
+    if (tid < numElements) {
+        bucket = (data[tid] >> bit) & (NUM_BUCKETS - 1);
+        atomicAdd(&bucketCount[bucket], 1);
+    }
+    
+    __syncthreads();
+    
+    // Calculate the starting index for each bucket
+    int bucketOffset = 0;
+    for (int i = 0; i < NUM_BUCKETS; i++) {
+        int temp = bucketCount[i];
+        bucketCount[i] = bucketOffset;
+        bucketOffset += temp;
+    }
+    
+    __syncthreads();
+    
+    // Move elements to their correct position
+    if (tid < numElements) {
+        bucket = (data[tid] >> bit) & (NUM_BUCKETS - 1);
+        tempData[bucketCount[bucket] + tid] = data[tid];
+    }
+    
+    __syncthreads();
+    
+    // Copy the sorted data back to the original array
+    if (tid < numElements) {
+        data[tid] = tempData[tid];
+    }
+}
+
+int main() {
+    int data[NUM_ELEMENTS];
+    int *d_data, *d_tempData;
+    int size = NUM_ELEMENTS * sizeof(int);
+    
+    // Initialize data on the host (without timing)
+    srand(time(NULL));
+    for (int i = 0; i < NUM_ELEMENTS; i++) {
+        data[i] = rand() % 1000000 + 1; // Generate random data between 1 and 1 million
+    }
+    
+    // Allocate memory on the device
+    cudaMalloc((void **)&d_data, size);
+    cudaMalloc((void **)&d_tempData, size);
+    
+    // Copy data from host to device
+    cudaMemcpy(d_data, data, size, cudaMemcpyHostToDevice);
+    
+    // Start timing
+    clock_t start_time = clock();
+
+    // Perform radix sort on the device
+    for (int bit = 0; bit < sizeof(int) * 8; bit += NUM_BITS) {
+        // Launch the kernel with the specified number of blocks and threads
+        radixSort<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_data, d_tempData, bit, NUM_ELEMENTS);
+    }
+    
+    // Synchronize and stop timing
+    cudaDeviceSynchronize();
+    clock_t end_time = clock();
+    double milliseconds = ((double)(end_time - start_time) / CLOCKS_PER_SEC) * 1000.0;
+
+    // Copy the sorted data back to the host
+    cudaMemcpy(data, d_data, size, cudaMemcpyDeviceToHost);
+    
+    // Free device memory
+    cudaFree(d_data);
+    cudaFree(d_tempData);
+    
+    // Print execution time
+    printf("Execution Time: %f milliseconds\n", milliseconds);
+    
+    return 0;
+}

@@ -1,0 +1,110 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
+// Function to generate a random number between min and max
+int getRandomNumber(int min, int max) {
+    return rand() % (max - min + 1) + min;
+}
+
+// Function to generate a random array of a given size
+void generateRandomArray(int arr[], int size, int min, int max) {
+    for (int i = 0; i < size; i++) {
+        arr[i] = getRandomNumber(min, max);
+    }
+}
+
+// A utility function to get the maximum value in arr[]
+int getMax(int arr[], int n) {
+    int mx = arr[0];
+    for (int i = 1; i < n; i++)
+        if (arr[i] > mx)
+            mx = arr[i];
+    return mx;
+}
+
+// A function to do counting sort of arr[]
+// according to the digit represented by exp.
+void countSort(int arr[], int n, int exp) {
+    // Output array
+    int output[n];
+    int i, count[10] = {0};
+
+    // Store count of occurrences in count[]
+    for (i = 0; i < n; i++)
+        count[(arr[i] / exp) % 10]++;
+
+    // Change count[i] so that count[i]
+    // now contains the actual position of this digit in output[]
+    for (i = 1; i < 10; i++)
+        count[i] += count[i - 1];
+
+    // Build the output array
+    for (i = n - 1; i >= 0; i--) {
+        output[count[(arr[i] / exp) % 10] - 1] = arr[i];
+        count[(arr[i] / exp) % 10]--;
+    }
+
+    // Copy the output array to arr[],
+    // so that arr[] now contains sorted numbers according to the current digit
+    for (i = 0; i < n; i++)
+        arr[i] = output[i];
+}
+
+// The main function to sort arr[] of size n using Radix Sort
+void radixsort(int arr[], int n) {
+    // Find the maximum number to know the number of digits
+    int m = getMax(arr, n);
+
+    // Do counting sort for every digit.
+    // Note that instead of passing the digit number, exp is passed.
+    // exp is 10^i where i is the current digit number
+    for (int exp = 1; m / exp > 0; exp *= 10)
+        countSort(arr, n, exp);
+}
+
+// A utility function to print an array
+void print(int arr[], int n) {
+    for (int i = 0; i < n; i++)
+        printf("%d ", arr[i]);
+    printf("\n");
+}
+
+int main() {
+    // Define the size of the array
+
+
+
+    int arraySize = 1000000;  // You can adjust the size as needed
+
+
+
+
+    // Seed the random number generator
+    srand(time(NULL));
+
+    // Allocate memory for the array
+    int *arr = (int *)malloc(arraySize * sizeof(int));
+
+    // Generate a random array
+    generateRandomArray(arr, arraySize, 1, 10000000);  // You can adjust the range of random numbers
+
+    // Measure the start time in milliseconds
+    clock_t start_time = clock();
+
+    // Perform Radix Sort
+    radixsort(arr, arraySize);
+
+    // Measure the end time in milliseconds
+    clock_t end_time = clock();
+
+
+    // Calculate the runtime in milliseconds
+    double runtime = ((double)(end_time - start_time) * 1000) / CLOCKS_PER_SEC;
+    printf("Runtime: %f milliseconds\n", runtime);
+
+    // Free allocated memory
+    free(arr);
+
+    return 0;
+}

@@ -1,0 +1,84 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <omp.h>
+
+#define MAX 1000000
+
+// Global variable for the number of threads
+int num_threads = 4; // Set to the desired number of threads
+
+// Function to generate a random number between 1 and MAX
+int getRandomNumber() {
+    return rand() % MAX + 1;
+}
+
+// Function to generate a random array of a given size
+void generateRandomArray(int arr[], int size) {
+    for (int i = 0; i < size; i++) {
+        arr[i] = getRandomNumber();
+    }
+}
+
+// A utility function to get the maximum value in arr[]
+int getMax(int arr[], int n) {
+    int mx = arr[0];
+    for (int i = 1; i < n; i++)
+        if (arr[i] > mx)
+            mx = arr[i];
+    return mx;
+}
+
+// Function to do counting sort of arr[] according to the digit represented by exp
+void countSort(int arr[], int n, int exp) {
+    int output[n];
+    int i, count[10] = {0};
+
+    #pragma omp parallel for num_threads(num_threads)
+    for (i = 0; i < n; i++)
+        count[(arr[i] / exp) % 10]++;
+
+    for (i = 1; i < 10; i++)
+        count[i] += count[i - 1];
+
+    for (i = n - 1; i >= 0; i--) {
+        output[count[(arr[i] / exp) % 10] - 1] = arr[i];
+        count[(arr[i] / exp) % 10]--;
+    }
+
+    #pragma omp parallel for num_threads(num_threads)
+    for (i = 0; i < n; i++)
+        arr[i] = output[i];
+}
+
+// The main function to sort arr[] of size n using Radix Sort
+void radixsort(int arr[], int n) {
+    int m = getMax(arr, n);
+
+    for (int exp = 1; m / exp > 0; exp *= 10)
+        countSort(arr, n, exp);
+}
+
+int main() {
+    int arr_size = 1000000;
+    int arr[arr_size];
+
+    // Generate and fill the random array
+    generateRandomArray(arr, arr_size);
+
+    // Measure the start time in milliseconds
+    double start_time = omp_get_wtime();
+
+    // Perform Radix Sort
+    radixsort(arr, arr_size);
+
+    // Measure the end time in milliseconds
+    double end_time = omp_get_wtime();
+
+    // Calculate the runtime in milliseconds
+    double runtime = (end_time - start_time) * 1000.0;
+
+    printf("Runtime: %f milliseconds\n", runtime);
+
+    return 0;
+}

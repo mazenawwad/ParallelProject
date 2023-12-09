@@ -1,0 +1,109 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <omp.h>
+
+// Global variables
+const int ARRAY_SIZE = 10000; // Array size
+const int NUM_THREADS = 4;    // Number of threads
+
+void merge(int arr[], int l, int m, int r) {
+    int i, j, k;
+    int n1 = m - l + 1;
+    int n2 = r - m;
+
+    // Create temporary arrays
+    int L[n1], R[n2];
+
+    // Copy data to temporary arrays L[] and R[]
+    for (i = 0; i < n1; i++)
+        L[i] = arr[l + i];
+    for (j = 0; j < n2; j++)
+        R[j] = arr[m + 1 + j];
+
+    // Merge the temporary arrays back into arr[l..r]
+    i = 0;
+    j = 0;
+    k = l;
+    while (i < n1 && j < n2) {
+        if (L[i] <= R[j]) {
+            arr[k] = L[i];
+            i++;
+        } else {
+            arr[k] = R[j];
+            j++;
+        }
+        k++;
+    }
+
+    // Copy the remaining elements of L[], if there are any
+    while (i < n1) {
+        arr[k] = L[i];
+        i++;
+        k++;
+    }
+
+    // Copy the remaining elements of R[], if there are any
+    while (j < n2) {
+        arr[k] = R[j];
+        j++;
+        k++;
+    }
+}
+
+void mergeSort(int arr[], int l, int r) {
+    if (l < r) {
+        int m = l + (r - l) / 2;
+
+        #pragma omp parallel sections if (r - l > 1000)
+        {
+            #pragma omp section
+            mergeSort(arr, l, m);
+
+            #pragma omp section
+            mergeSort(arr, m + 1, r);
+        }
+
+        merge(arr, l, m, r);
+    }
+}
+
+double measureRuntime(int arr[], int size) {
+    clock_t start_time = clock();
+
+    #pragma omp parallel
+    {
+        #pragma omp single nowait
+        mergeSort(arr, 0, size - 1);
+    }
+
+    clock_t end_time = clock();
+
+    return ((double)(end_time - start_time) * 1000) / CLOCKS_PER_SEC;
+}
+
+int main() {
+    srand(time(NULL));
+
+    // Allocate memory for the array
+    int *arr = (int *)malloc(ARRAY_SIZE * sizeof(int));
+
+    // Fill the array with random numbers
+    for (int i = 0; i < ARRAY_SIZE; i++) {
+        arr[i] = rand() % 1000000 + 1;
+    }
+
+    // Set the number of threads for OpenMP
+    omp_set_num_threads(NUM_THREADS);
+
+    // Measure the runtime of mergeSort
+    double runtime = measureRuntime(arr, ARRAY_SIZE);
+
+    // Print the runtime
+    printf("Runtime: %f milliseconds\n", runtime);
+
+    // Free allocated memory
+    free(arr);
+
+    return 0;
+}

@@ -1,0 +1,172 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <mpi.h>
+
+// Function to generate a random number between min and max
+int getRandomNumber(int min, int max) {
+    return rand() % (max - min + 1) + min;
+}
+
+// Function to generate a random array of a given size
+void generateRandomArray(int arr[], int size, int min, int max) {
+    for (int i = 0; i < size; i++) {
+        arr[i] = getRandomNumber(min, max);
+    }
+}
+
+// A utility function to get the maximum value in arr[]
+int getMax(int arr[], int n) {
+    int mx = arr[0];
+    for (int i = 1; i < n; i++)
+        if (arr[i] > mx)
+            mx = arr[i];
+    return mx;
+}
+
+// Function to do counting sort of arr[] according to the digit represented by exp
+void countSort(int arr[], int n, int exp) {
+    int output[n];
+    int i, count[10] = {0};
+
+    for (i = 0; i < n; i++)
+        count[(arr[i] / exp) % 10]++;
+
+    for (i = 1; i < 10; i++)
+        count[i] += count[i - 1];
+
+    for (i = n - 1; i >= 0; i--) {
+        output[count[(arr[i] / exp) % 10] - 1] = arr[i];
+        count[(arr[i] / exp) % 10]--;
+    }
+
+    for (i = 0; i < n; i++)
+        arr[i] = output[i];
+}
+
+// The main function to sort arr[] of size n using Radix Sort
+void radixsort(int arr[], int n) {
+    int m = getMax(arr, n);
+
+    for (int exp = 1; m / exp > 0; exp *= 10)
+        countSort(arr, n, exp);
+}
+
+// A utility function to print an array
+void print(int arr[], int n) {
+    for (int i = 0; i < n; i++)
+        printf("%d ", arr[i]);
+    printf("\n");
+}
+// Function to merge two sorted arrays
+void merge(int arr[], int l, int m, int r) {
+    int i, j, k;
+    int n1 = m - l + 1;
+    int n2 = r - m;
+
+    // Create temp arrays
+    int L[n1], R[n2];
+
+    // Copy data to temp arrays L[] and R[]
+    for (i = 0; i < n1; i++)
+        L[i] = arr[l + i];
+    for (j = 0; j < n2; j++)
+        R[j] = arr[m + 1 + j];
+
+    // Merge the temp arrays back into arr[l..r]
+    i = 0; // Initial index of first subarray
+    j = 0; // Initial index of second subarray
+    k = l; // Initial index of merged subarray
+    while (i < n1 && j < n2) {
+        if (L[i] <= R[j]) {
+            arr[k] = L[i];
+            i++;
+        } else {
+            arr[k] = R[j];
+            j++;
+        }
+        k++;
+    }
+
+    // Copy the remaining elements of L[], if there are any
+    while (i < n1) {
+        arr[k] = L[i];
+        i++;
+        k++;
+    }
+
+    // Copy the remaining elements of R[], if there are any
+    while (j < n2) {
+        arr[k] = R[j];
+        j++;
+        k++;
+    }
+}
+// Function to merge all subarrays
+void mergeAllSubarrays(int arr[], int n, int subArraySize) {
+    for (int i = 0; i < n; i += subArraySize * 2) {
+        int mid = i + subArraySize - 1;
+        int rightEnd = i + 2 * subArraySize - 1;
+        if (rightEnd > n) rightEnd = n;
+        merge(arr, i, mid, rightEnd);
+    }
+}
+
+// The main function with MPI
+int main(int argc, char** argv) {
+    MPI_Init(&argc, &argv);
+
+    int world_size;
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+
+    // Seed the random number generator differently for each process
+    srand(time(NULL) + world_rank);
+
+    int arraySize = 1000000; // Make sure it's divisible by world_size
+
+    // Each process will sort a subarray of size arraySize/world_size
+    int subArraySize = arraySize / world_size;
+    int* subArray = (int *)malloc(subArraySize * sizeof(int));
+
+    int* arr = NULL;
+    if (world_rank == 0) {
+        arr = (int *)malloc(arraySize * sizeof(int));
+        generateRandomArray(arr, arraySize, 1, 10000000);
+    }
+
+    // Distribute parts of the array to all processes
+    MPI_Scatter(arr, subArraySize, MPI_INT, subArray, subArraySize, MPI_INT, 0, MPI_COMM_WORLD);
+
+
+
+
+   // Measure the start time in milliseconds
+    clock_t start_time = clock();
+
+
+
+    // Perform Radix Sort on each part
+    radixsort(subArray, subArraySize);
+
+    // Gather all sorted subarrays at root
+    MPI_Gather(subArray, subArraySize, MPI_INT, arr, subArraySize, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Root process merges the sorted subarrays
+    if (world_rank == 0) {
+        for (int size = subArraySize; size < arraySize; size *= 2) {
+            mergeAllSubarrays(arr, arraySize, size);
+        }
+        free(arr);
+    }
+    
+    clock_t end_time = clock();
+
+    free(subArray);
+    MPI_Finalize();
+    double runtime = ((double)(end_time - start_time) * 1000) / CLOCKS_PER_SEC;
+    printf("Runtime: %f milliseconds\n", runtime);
+    return 0;
+}

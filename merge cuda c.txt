@@ -1,0 +1,124 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <cuda.h>
+#include <curand.h>
+#include <curand_kernel.h>
+
+#define BLOCK_SIZE 1024 // You can change this value to optimize performance
+
+_global_ void setup_kernel(curandState *state, unsigned long seed) {
+    int id = threadIdx.x + blockIdx.x * blockDim.x;
+    curand_init(seed, id, 0, &state[id]);
+}
+
+_global_ void generate_random_numbers(curandState *state, int *numbers, int n) {
+    int id = threadIdx.x + blockIdx.x * blockDim.x;
+    if (id < n) {
+        numbers[id] = curand(&state[id]) % 1000000 + 1;
+    }
+}
+
+_device_ void merge(int *numbers, int *temp, int left, int mid, int right) {
+    int i = left;
+    int j = mid + 1;
+    int k = left;
+
+    while (i <= mid && j <= right) {
+        if (numbers[i] <= numbers[j]) {
+            temp[k] = numbers[i];
+            i++;
+        } else {
+            temp[k] = numbers[j];
+            j++;
+        }
+        k++;
+    }
+
+    while (i <= mid) {
+        temp[k] = numbers[i];
+        i++;
+        k++;
+    }
+
+    while (j <= right) {
+        temp[k] = numbers[j];
+        j++;
+        k++;
+    }
+
+    for (i = left; i <= right; i++) {
+        numbers[i] = temp[i];
+    }
+}
+
+_global_ void merge_sort(int *numbers, int *temp, int size) {
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+
+    if (idx >= size / 2) return;
+
+    int left = 2 * idx;
+    int right = left + 1;
+
+    if (right < size) {
+        if (numbers[left] > numbers[right]) {
+            // Swap
+            int t = numbers[left];
+            numbers[left] = numbers[right];
+            numbers[right] = t;
+        }
+    }
+
+    __syncthreads();
+
+    for (int width = 2; width < size; width *= 2) {
+        int mid = min(left + (width / 2) - 1, size - 1);
+        int right = min(left + width - 1, size - 1);
+
+        if (left < right) {
+            merge(numbers, temp, left, mid, right);
+        }
+
+        __syncthreads();
+    }
+}
+
+int main() {
+    int n = 1000000; // Size of the array
+    int *d_numbers, *d_temp;
+    curandState *d_state;
+
+    int blocks = (n + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+    // Allocate memory on the device
+    cudaMalloc(&d_numbers, n * sizeof(int));
+    cudaMalloc(&d_temp, n * sizeof(int));
+    cudaMalloc(&d_state, n * sizeof(curandState));
+
+    // Setup the random number generator
+    setup_kernel<<<blocks, BLOCK_SIZE>>>(d_state, time(NULL));
+    generate_random_numbers<<<blocks, BLOCK_SIZE>>>(d_state, d_numbers, n);
+
+    // Measure the start time here
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaEventRecord(start, 0);
+
+    // Call the merge sort kernel
+    merge_sort<<<blocks, BLOCK_SIZE>>>(d_numbers, d_temp, n);
+
+    // Measure the end time here
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+    float elapsedTime;
+    cudaEventElapsedTime(&elapsedTime, start, stop);
+
+    printf("Time to sort: %3.1f ms\n", elapsedTime);
+
+    // Cleanup
+    cudaFree(d_numbers);
+    cudaFree(d_temp);
+    cudaFree(d_state);
+
+    return 0;
+}
